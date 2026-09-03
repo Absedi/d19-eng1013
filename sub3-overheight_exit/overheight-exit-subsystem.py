@@ -1,7 +1,7 @@
 # This module contains the code for the over height exit
 # Created By : Millie Blank
 # Created Date: 26/8/2026
-# Version ='4.0'
+# Version ='5.0'
 
 from pymata4 import pymata4
 import time
@@ -32,7 +32,7 @@ echoPin = 12
 
 # Declare variables to hold US5 data, 10:1 scale
 maxVehicleHeight = 40 # cm
-heightUS5 = 50 # physical vertical height of US5
+heightUS5 = 50 # cm, physical vertical height of US5
 
 # Global variables
 overheightVeh = False
@@ -55,7 +55,7 @@ def US5_callback(data):
     global heightUS5, overheightVeh
     distance = data[2]
     
-    if heightUS5 - distance >= maxVehicleHeight:
+    if heightUS5 - distance > maxVehicleHeight:
         overheightVeh = True
     else:
         overheightVeh = False
