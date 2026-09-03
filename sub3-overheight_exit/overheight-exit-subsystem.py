@@ -30,9 +30,9 @@ yellowWait = 3 # num of seconds for light to remain yellow
 triggerPin = 11
 echoPin = 12
 
-# Declare variables to hold US5 data
-maxVehicleHeight = 4
-heightUS5 = 5 # physical vertical height of US5
+# Declare variables to hold US5 data, 10:1 scale
+maxVehicleHeight = 40 # cm
+heightUS5 = 50 # physical vertical height of US5
 
 # Global variables
 overheightVeh = False
