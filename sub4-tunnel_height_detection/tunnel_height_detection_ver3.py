@@ -1,14 +1,15 @@
 #This module contains the code for the tunnel height detection
+#Distances are measured in CM and have a 1:10 sca;e
 # Created By : Leway Wang
 # Created Date: 27/8/2026
-# version ='2.0'
+# version ='3.0'
 
 #1:4 scale of US3, and US4
 #Notes
 #Write shutting function for all pins
 
-#global Variables
-overHeightLimitMax = 400.0
+#Variables
+tunnelHeight = 40.0
 ultraSonicHeight = 50.0
 timeoutUS = 800000
 us3DistanceList = []
@@ -106,14 +107,14 @@ def main():
     #Validation statement for input overheight limit
     global overHeightLimit #Needs to be used in whole subsystem
     while True:
-        overHeightLimit = input("Enter the overheight limit: ")/10 #Scaling Factor of 1:10
+        overHeightLimit = input("Enter the overheight limit in meters: ")*10 #Scaling Factor of 1:10
         if overHeightLimit == '':
-            overHeightLimit = 40.0 #Default Value
+            overHeightLimit = tunnelHeight #Default Value
             print("Over Height Limit defaults to 4m")
             break
         try:
             overHeightLimit = float(overHeightLimit)
-            if overHeightLimit <= 2 or overHeightLimit >= overHeightLimitMax:
+            if overHeightLimit <= 2 or overHeightLimit >= tunnelHeight:
                 print("Enter a valid float value - within 2 and 400")
                 continue
             break
@@ -153,5 +154,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
