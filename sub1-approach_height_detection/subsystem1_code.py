@@ -1,8 +1,10 @@
 """
+This module contains the code for approach height detection (subsystem 1)
 Team: D19
 Author: Pooja Sai Shruthika Medisetti
-Date: 31-08-2026
+Created on: 31-08-2026
 Version: 3.0
+
 """
 
 import time
