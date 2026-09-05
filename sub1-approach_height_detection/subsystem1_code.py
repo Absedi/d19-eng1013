@@ -3,18 +3,6 @@ Team: D19
 Author: Pooja Sai Shruthika Medisetti
 Date: 31-08-2026
 Version: 3.0
-
-Subsystem 1 (Approach Height Detection)
-
-This subsystem acts as the first checking point for any overheight vehicles approaching the tunnel. 
-It uses two ultrasonic sensors (US1, US2) to detect vehicles taller than the configured height limit.
-When detected, the traffic lights (TL1, TL2) are used in a specific sequence to
-stop the traffic behind the overheight vehicle, allowing some time to slow down and exit via the
-overheight exit. 
-All required features of subsystem 1 (1.R1 - 1.R4) are implemented: 
-Calculating vehicle height from US1/US2, printing suitable alerts, and running TL1/TL2 light sequences if
-required. US1, US2, TL1 and TL2 are controlled via an Arduino running Firmata, using the pymata4 library in Python.
-
 """
 
 import time
