@@ -1,3 +1,8 @@
+# This module contains the code for the tunnel control avenue
+# Created By : Manit Kalra
+# Created Date: 21/9/2026
+# Version ='5.0'
+
 from pymata4 import pymata4
 import time
 
@@ -5,28 +10,32 @@ import time
 
 
 board = pymata4.Pymata4()
-#tl4RedLed = 0 # shift register pins associated with traffic lights 4 and 5
-#tl4YellowLed = 1
-#tl4GreenLed = 2
-#tl5RedLed = 3
-#tl5YellowLed = 4
-#tl5GreenLed = 5
+#tL4RedLed = 0 # shift register pins associated with traffic lights 4 and 5
+#tL4YellowLed = 1
+#tL4GreenLed = 2
+#tL5RedLed = 3
+#tL5YellowLed = 4
+#tL5GreenLed = 5
 #PLRed = 6
 #PLGreen = 7
 clockPin = 11
 dataPin = 13
 latchPin = 12
-pB = 1
-A0 = 7
+pB = 10
+pLRedFlashing = 9
+A3 = 3
 
 redRedGreen = 137
 yellowRedRed = 74
 redGreenRed = 97
 redYellowRed = 81
 greenRedRed = 76
-redRedRed = 73
+redRedFlashingRed = 9
 daylightLevelCuttoffInput = 512
 
+
+pLGreenTime = 3
+pLFlashingRedTime = 2
 
 
 
@@ -38,14 +47,20 @@ board.set_pin_mode_digital_output(clockPin)
 board.set_pin_mode_digital_output(dataPin)
 board.set_pin_mode_digital_output(latchPin)
 board.set_pin_mode_digital_input(pB)
-board.set_pin_mode_analog_input(A0)
+board.set_pin_mode_digital_output(pLRedFlashing)
+board.set_pin_mode_analog_input(A3)
 
 
 def lights(tL4,tL5,pL):
     """
+    takes the state of every light and turns on and off the corresponding leds
     parameters
-    tL4
+    tL4 :"green", "yellow", or "red"(str)
+    tL5 :"green", "yellow", or "red"(str)
+    pL : "red", "green", or "flashing red"(str)
 
+    returns
+    None
     """
     lightValue = 0
     if tL4 == "red":
@@ -62,8 +77,13 @@ def lights(tL4,tL5,pL):
         lightValue += 32
     if pL == "red":
         lightValue += 64
+        board.digital_pin_write(pLRedFlashing,0)
     elif pL == "green":
         lightValue += 128
+        board.digital_pin_write(pLRedFlashing,0)
+    elif pL == "flashing red":
+        board.digital_pin_write(pLRedFlashing,1)
+        lightValue+=0
     elif pL == "off":
         lightValue +=0
 
@@ -74,17 +94,11 @@ def lights(tL4,tL5,pL):
         board.digital_pin_write(dataPin,state)
         board.digital_pin_write(clockPin,1)
     board.digital_pin_write(latchPin,1)
-    print("lightsing")
 
-#state 1, tl4 is green, tl5 is red(20s)
-#state 2, tl4 is yellow, tl5 is red(3s)
-#state 3, tl4 is red, tl5 is green(10s)
-#state 4, tl4 is red, tl5 is yelloe(3s)
-#state 5, tl4 and tl5 are red(5s(3s for PB to be green, 2s for PB to flash red))
 
 def change_state(changeIndex):
     """
-    Look up the (tl4, tl5) colour pair for a given state index.
+    Look up the (tL4, tL5) colour pair for a given state index.
  
     Parameters
     changeIndex :
@@ -92,8 +106,8 @@ def change_state(changeIndex):
     to a fixed pair of traffic-light colours(int):
  
     Returns
-    tl4 = "green", "yellow", or "red"(str)
-    tl5 = "green", "yellow", or "red"(str)
+    tL4 = "green", "yellow", or "red"(str)
+    tL5 = "green", "yellow", or "red"(str)
     """
     if changeIndex == yellowRedRed:
         return "yellow","red"
@@ -103,66 +117,61 @@ def change_state(changeIndex):
         return "red","yellow"
     elif changeIndex == greenRedRed:
         return "green","red"
-    elif changeIndex == redRedGreen or changeIndex == redRedRed:
+    elif changeIndex == redRedGreen or changeIndex == redRedFlashingRed:
         return "red","red"
     else:
         print("Invalid")
         return
 
-def R1(tl4, tl5,pL):
+def R1(tL4, tL5,pL):
     """
-    Run the pedestrian-crossing sequence.
- 
-    Called when the pedestrian push-button is pressed. Brings both
-    traffic lights to red, gives the pedestrian light a green "walk"
-    phase, then a flashing red "don't walk" warning phase, before
-    handing control back to the normal traffic-light cycle.
+    Run the pedestrian-crossing sequence. 
  
     Parameters
-    tl4 :Current colour state of traffic light 4 ("green", "yellow",
-        or "red").(str)
-    tl5 :Current colour state of traffic light 5 ("green", "yellow",
-        or "red").(str)
-    pL : Current colour state of pedestrian light("red"). (str)
+    tL4 :"green", "yellow", or "red"(str)
+    tL5 :"green", "yellow", or "red"(str)
+    pL : "red"(str)
  
     Returns
-    tl4 = "green"(str)
-    tl5 = "red"(str)
+    tL4 = "green"(str)
+    tL5 = "red"(str)
     """
     print("Initiating R1 sequence")
     time.sleep(2)
-    if tl5 != "red":
-        tl4, tl5 = change_state(yellowRedRed)
-        lights(tl4,tl5,pL)
+    if tL5 != "red":
+        tL4, tL5 = change_state(redYellowRed)
+        lights(tL4,tL5,pL)
         time.sleep(3)
-        tl4,tl5 = change_state(redRedGreen)
-        lights(tl4,tl5,pL)
+        tL4,tL5 = change_state(redRedGreen)
+        lights(tL4,tL5,pL)
     else:
-        tl4, tl5 = change_state(redYellowRed)
-        lights(tl4,tl5,pL)
+        tL4, tL5 = change_state(yellowRedRed)
+        lights(tL4,tL5,pL)
         time.sleep(3)
-        tl4,tl5 = change_state(redRedGreen)
-        lights(tl4,tl5,pL)
+        tL4,tL5 = change_state(redRedGreen)
+        lights(tL4,tL5,pL)
     pL = "green"
-    lights(tl4,tl5,pL)
-    time.sleep(3)
+    lights(tL4,tL5,pL)
+    time.sleep(pLGreenTime)
+    pL = "flashing red"
+    lights(tL4,tL5,pL)
+    time.sleep(pLFlashingRedTime)
     pL = "red"
-    lights(tl4,tl5,pL)
-    flashingTimeStart = time.time()
-    flashingTimeEnd = time.time()
-    while flashingTimeEnd-flashingTimeStart<2:
-        
-        time.sleep(0.1)
-        pL = "off"
-        lights(tl4,tl5,pL)
-        time.sleep(0.1)
-        pL = "red"
-        lights(tl4,tl5,pL)
-        flashingTimeEnd = time.time()
+    lights(tL4,tL5,pL)
     return "green","red"
     
 def day_night_cycle():
-    if board.analog_read(A0)<=512:
+    """
+    Reads the output from the light dependant resistpr and decides whether to run the day or the night cyclr
+    
+    parameters
+    None
+    
+    Returns
+    tL4GreenTime = 30 for night cycle, 20 for day (int)
+    tL5GreenTime = 5 for night cycle, 10 for day (int)    
+    """
+    if board.analog_read(A3)<=512:
         return 30,5
     else:
         return 20,10
@@ -170,48 +179,63 @@ def day_night_cycle():
 
         
 def main():
+    """
+    Controls the entire traffic light system
+
+    Parameters
+    None
+
+    Returns
+    None
+    
+    """
     start = time.time()
-    timeBetweenR1Start = 0
+    timeBetweenR1Start = -30
     yellowTime = 3
-    tl4 = "green" #Initial state for traffic light 4 and 5
-    tl5 = "red"
+    tL4 = "green" #Initial state for traffic light 4 and 5
+    tL5 = "red"
+    pL = "red"
+    lights(tL4,tL5,pL)
     while True:
         try: 
-            tl4GreenTime,tl5GreenTime = day_night_cycle()
+            tL4GreenTime,tL5GreenTime = day_night_cycle()
             pL = "red"
-            if tl4 == "green" and tl5 == "red":
+            if tL4 == "green" and tL5 == "red":
                 end = time.time()
-                if end - start >= tl4GreenTime:
+                if end - start >= tL4GreenTime:
                     start = time.time()
-                    tl4, tl5 = change_state(yellowRedRed)
-                    print(tl4+ "     "+ tl5)
-                    lights(tl4,tl5,pL)
-            if tl4 == "yellow" and tl5 == "red":
-                end = time.time()
-                if end - start >= yellowTime:
-                    start = time.time()
-                    tl4, tl5 = change_state(redGreenRed)
-                    print(tl4+ "     "+ tl5) 
-                    lights(tl4,tl5,pL)   
-            if tl4 == "red" and tl5 == "green":
-                end = time.time()
-                if end - start >= tl5GreenTime:
-                    start = time.time()
-                    tl4, tl5 = change_state(redYellowRed)
-                    print(tl4+ "     "+ tl5) 
-                    lights(tl4,tl5,pL) 
-            if tl4 == "red" and tl5 == "yellow":
+                    tL4, tL5 = change_state(yellowRedRed)
+                    print(tL4+ "     "+ tL5)
+                    lights(tL4,tL5,pL)
+            if tL4 == "yellow" and tL5 == "red":
                 end = time.time()
                 if end - start >= yellowTime:
                     start = time.time()
-                    tl4, tl5 = change_state(greenRedRed)
-                    print(tl4+ "     "+ tl5) 
-                    lights(tl4,tl5,pL)
+                    tL4, tL5 = change_state(redGreenRed)
+                    print(tL4+ "     "+ tL5) 
+                    lights(tL4,tL5,pL)   
+            if tL4 == "red" and tL5 == "green":
+                end = time.time()
+                if end - start >= tL5GreenTime:
+                    start = time.time()
+                    tL4, tL5 = change_state(redYellowRed)
+                    print(tL4+ "     "+ tL5) 
+                    lights(tL4,tL5,pL) 
+            if tL4 == "red" and tL5 == "yellow":
+                end = time.time()
+                if end - start >= yellowTime:
+                    start = time.time()
+                    tL4, tL5 = change_state(greenRedRed)
+                    print(tL4+ "     "+ tL5) 
+                    lights(tL4,tL5,pL)
             if board.digital_read(pB)[0] == 1:
                 timeBetweenR1End = time.time()
+                print(timeBetweenR1Start)
+                print(timeBetweenR1End)
                 if timeBetweenR1End-timeBetweenR1Start>=30:
-                    tl4, tl5 = R1(tl4,tl5,pL)
+                    tL4, tL5 = R1(tL4,tL5,pL)
                     timeBetweenR1Start = time.time()
+                    lights(tL4,tL5,pL)
                 else: 
                     print(f"{30 - (timeBetweenR1End - timeBetweenR1Start):.0f} seconds till pedestrian light sequence can be initiated again")
         except KeyboardInterrupt:
