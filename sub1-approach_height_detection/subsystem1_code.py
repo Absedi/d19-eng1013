@@ -2,8 +2,8 @@
 This module contains the code for approach height detection (subsystem 1)
 Team: D19
 Author: Pooja Sai Shruthika Medisetti
-Created on: 31-08-2026
-Version: 4.0
+Created on: 05-10-2026
+Version: 5.0
 """
 
 import time
@@ -12,36 +12,35 @@ from pymata4 import pymata4
 # pin configurations:
 us1TrigPin = 2
 us1EchoPin = 3
-
-tl1RedPin = 5
-tl1YellowPin = 6
-tl1GreenPin = 7
-
 us2TrigPin = 9
 us2EchoPin = 10
 
-tl2RedPin = 11
-tl2YellowPin = 12
-tl2GreenPin = 13
+# traffic light pins (red, yellow, green)
+tl1Pins = (5, 6, 7)
+tl2Pins = (11, 12, 13)
+
+# WL1 warning light pins (two yellow LEDs)
+wl1Pins = (4, 8)
 
 # height of sensor above the ground (metres)
 sensorMountHeight = 5.0
 
 # scaling: 10cm sensor reading = 1m of height
-sensorCmPerMetre = 10.0
+scalingSensor = 10.0
 
-# default overheight limit in metres (spec 1.R4)
+# default overheight limit in metres
 defaultOverheightLimit = 4.0
 
-# traffic light timings in seconds (spec 1.R2 / 1.R3)
+# traffic light timings (seconds)
 yellowDurationSeconds = 1
 redDurationSeconds = 30
 
-# delay between each pass of the main loop, in seconds
+# delay between looping (seconds)
 loopDelaySeconds = 0.05
 
-# number of most recent readings averaged to filter sensor noise (spec 1.G4)
-movingAverageWindowSize = 5
+# WL1 LED flashing rate (at 2-3 Hz)
+wl1FlashFrequencyHz = 2.5
+wl1FlashHalfPeriodSeconds = 1 / (2 * wl1FlashFrequencyHz)
 
 # digital pin states
 pinOn = 1
@@ -50,42 +49,34 @@ pinOff = 0
 
 def pins_setup(board):
     """
-    Configures the pins for US1, US2, TL1 and TL2.
+    Configures the pins for US1, US2, TL1, TL2 and WL1.
 
-    Args:
-    board (The connection to the Arduino (via pymata4))
+    Parameters:
+    board (Pymata4): The connection to the Arduino (via pymata4)
 
     Returns:
-    None
+    function has no return
     """
-
     # configuring US1 and US2
     board.set_pin_mode_sonar(us1TrigPin, us1EchoPin)
     board.set_pin_mode_sonar(us2TrigPin, us2EchoPin)
 
-    # configuring TL1 leds
-    board.set_pin_mode_digital_output(tl1RedPin)
-    board.set_pin_mode_digital_output(tl1YellowPin)
-    board.set_pin_mode_digital_output(tl1GreenPin)
-
-    # configuring TL2 leds
-    board.set_pin_mode_digital_output(tl2RedPin)
-    board.set_pin_mode_digital_output(tl2YellowPin)
-    board.set_pin_mode_digital_output(tl2GreenPin)
+    # configuring every TL1, TL2 and WL1 LED as an output
+    for pin in tl1Pins + tl2Pins + wl1Pins:
+        board.set_pin_mode_digital_output(pin)
 
 
 def overheight_limit_setup():
     """
-    The user is asked to enter the overheight limit in metres.
-    If the user presses enter without providing any input, the default
-    limit is used. If the input is not a valid positive number, the user
-    is asked again.
+    Asks the user to enter the overheight limit in metres. If the user presses
+    enter, the default limit of 4m is used. If the input
+    is not positive and is 0, the user is asked again.
 
-    Args:
-    None
+    Parameters:
+    function has no parameters
 
     Returns:
-    overheightLimit (float) - the height limit in metres
+    overheightLimit (float): The overheight limit in metres
     """
     while True:
         userInput = input(f"Enter overheight limit in metres (press Enter to set to default of {defaultOverheightLimit}m): ")
@@ -96,165 +87,147 @@ def overheight_limit_setup():
 
         try:
             overheightLimit = float(userInput)
+            if overheightLimit > 0:
+                return overheightLimit
+            print("The limit must be greater than 0m")
         except ValueError:
-            print("Invalid input. Please enter a number, e.g. 4.0")
-            continue
-
-        if overheightLimit <= 0:
-            print("Invalid input. The limit must be greater than 0.")
-            continue
-
-        return overheightLimit
+            print("Please enter a valid number")
 
 
 def vehicle_height_detection(board, trigPin):
     """
-    Calculates the height of the vehicle using data from US1/US2
+    Calculates the height of the vehicle using data from US1/US2.
 
-    Args:
-    board (The connection to the Arduino (via pymata4))
-    trigPin (the trigger pin number of the ultrasonic sensor to read from)
-
-    Returns:
-    vehicleHeight (float): the calculated height of the vehicle in metres
-    """
-    pinReading = board.sonar_read(trigPin)
-    heightAboveVehicleCm = pinReading[0]
-
-    # scaling sensor reading (cm) to height (m)
-    heightAboveVehicle = heightAboveVehicleCm / sensorCmPerMetre
-    vehicleHeight = sensorMountHeight - heightAboveVehicle
-    return vehicleHeight
-
-
-def moving_average(readings, newReading):
-    """
-    Filters noise from sensor using a moving average. The new reading is
-    added to the list, the oldest reading is removed once the list is longer
-    than movingAverageWindowSize, and the average of the list is returned.
-    Until the list is full, the average of the readings collected so far is used.
-
-    Args:
-    readings (list): the recent readings for one sensor (updated in place)
-    newReading (float): the latest reading from that sensor
+    Parameters:
+    board (Pymata4): The connection to the Arduino (via pymata4)
+    trigPin (int): The trigger pin number of the ultrasonic sensor to read from
 
     Returns:
-    averageReading (float): the average of the recent readings
+    vehicleHeight (float): The calculated height of the vehicle in metres
     """
-    readings.append(newReading)
+    distanceCm, readingTime = board.sonar_read(trigPin)
 
-    # remove oldest reading once window is full
-    if len(readings) > movingAverageWindowSize:
-        readings.pop(0)
-
-    averageReading = sum(readings) / len(readings)
-    return averageReading
+    # scaling sensor reading (cm) to the distance above the vehicle (m)
+    heightAboveVehicle = distanceCm / scalingSensor
+    return sensorMountHeight - heightAboveVehicle
 
 
-def print_overheight_alert(vehicleHeight, sensorName):
+def print_overheight_alert(vehicleHeight):
     """
-    Prints an alert to the console of the detected
-    vehicle height, the sensor that detected it, and the current date/time.
+    Prints an alert to the console with the detected vehicle height from US1 and the date/time of detection.
 
-    Args:
-    vehicleHeight (float): the detected height of the overheight vehicle in metres
-    sensorName (string): the name of the sensor that detected the vehicle, e.g. "US1"
+    Parameters:
+    vehicleHeight (float): The detected height of the overheight vehicle in metres
 
     Returns:
-    None
+    function has no return
     """
-
-    # getting current time
-    currentTime = time.ctime()
-
-    print(f"ALERT! Overheight vehicle of {vehicleHeight:.2f}m detected by {sensorName} at {currentTime}")
+    print(f"ALERT! Overheight vehicle of {vehicleHeight:.2f}m detected by US1 at {time.ctime()}")
 
 
-def green_to_yellow(board, currentLight, timer, redPin, yellowPin, greenPin):
+def set_light(board, lightPins, colour):
     """
-    The chosen traffic light's current light is switched to yellow if it's currently green.
+    Turns on the LED of given colour and turns off LEDs of other two colours.
 
-    Args:
-    board (The connection to the Arduino (via pymata4))
-    currentLight (the traffic light's current colour, as a string)
-    timer (time.time() - the time when the last light change occurred)
-    redPin, yellowPin, greenPin (change with TL1 or TL2's pin numbers)
+    Parameters:
+    board (Pymata4): The connection to the Arduino (via pymata4)
+    lightPins (tuple): The (red, yellow, green) pin numbers of TL1 or TL2
+    colour (str): The colour to show: "red", "yellow" or "green"
 
     Returns:
-    currentLight (updated to yellow, or stays as it was)
-    timer (the time when the light change occurred)
+    function has no return
     """
-    if currentLight == "green":
-        board.digital_write(greenPin, pinOff)
-        board.digital_write(redPin, pinOff)
-        board.digital_write(yellowPin, pinOn)
-        return "yellow", time.time()
-    return currentLight, timer
+    redPin, yellowPin, greenPin = lightPins
+    board.digital_write(redPin, pinOn if colour == "red" else pinOff)
+    board.digital_write(yellowPin, pinOn if colour == "yellow" else pinOff)
+    board.digital_write(greenPin, pinOn if colour == "green" else pinOff)
 
 
-def yellow_to_red_to_green(board, currentLight, timer, redPin, yellowPin, greenPin):
+def update_light(board, lightPins, colour, timer, triggered):
     """
-    Switches a light from one colour to the next once the required time has passed.
-    Yellow for yellowDurationSeconds, then red for redDurationSeconds, then green.
+    Runs a traffic light's overheight sequence: green to yellow when triggered,
+    then red after yellowDurationSeconds, then green after redDurationSeconds.
 
-    Args:
-    board (The connection to the Arduino (via pymata4))
-    currentLight (the light's current colour, as a string)
-    timer (time.time() - the time when the last light change occurred)
-    redPin, yellowPin, greenPin (change with TL1 or TL2's pin numbers)
+    Parameters:
+    board (Pymata4): The connection to the Arduino (via pymata4)
+    lightPins (tuple): The (red, yellow, green) pin numbers of TL1 or TL2
+    colour (str): The light's current colour
+    timer (float): The time (from time.time()) of the light's last colour change
+    triggered (bool): True if an overheight vehicle was just detected for this light
 
     Returns:
-    currentLight (updated light colour)
-    timer (the time when the light change occurred)
+    colour (str): The light's colour after the update
+    timer (float): The time of the light's last colour change
     """
-    # time elapsed since the last light change
     timeElapsed = time.time() - timer
 
-    if currentLight == "yellow" and timeElapsed >= yellowDurationSeconds:
-        board.digital_write(greenPin, pinOff)
-        board.digital_write(yellowPin, pinOff)
-        board.digital_write(redPin, pinOn)
-        return "red", time.time()
+    if colour == "green" and triggered:
+        newColour = "yellow"
+    elif colour == "yellow" and timeElapsed >= yellowDurationSeconds:
+        newColour = "red"
+    elif colour == "red" and timeElapsed >= redDurationSeconds:
+        newColour = "green"
+    else:
+        return colour, timer
 
-    if currentLight == "red" and timeElapsed >= redDurationSeconds:
-        board.digital_write(yellowPin, pinOff)
-        board.digital_write(redPin, pinOff)
-        board.digital_write(greenPin, pinOn)
-        return "green", time.time()
+    set_light(board, lightPins, newColour)
+    return newColour, time.time()
 
-    return currentLight, timer
+
+def update_wl1(board, tl1Colour, tl2Colour):
+    """
+    Flashes two yellow WL1 LEDs at 2-3Hz while TL1 or TL2 is not
+    green. Both LEDs are off once TL1 and TL2 are both green.
+
+    Parameters:
+    board (Pymata4): The connection to the Arduino (via pymata4)
+    tl1Colour (str): The current colour of TL1
+    tl2Colour (str): The current colour of TL2
+
+    Returns:
+    function has no return
+    """
+    firstLedPin, secondLedPin = wl1Pins
+
+    if tl1Colour == "green" and tl2Colour == "green":
+        firstLedOn = False
+        secondLedOn = False
+    else:
+        # first LED lights on for halfway through one flash
+        firstLedOn = int(time.time() / wl1FlashHalfPeriodSeconds) % 2 == 0
+        # second LED lights on for the other half of one flash
+        secondLedOn = not firstLedOn
+
+    board.digital_write(firstLedPin, pinOn if firstLedOn else pinOff)
+    board.digital_write(secondLedPin, pinOn if secondLedOn else pinOff)
 
 
 def turn_off_all_lights(board):
     """
-    Turns off every LED used by TL1 and TL2.
+    Turns off every LED used by TL1, TL2 and WL1.
 
-    Args:
-    board (The connection to the Arduino (via pymata4))
+    Parameters:
+    board (Pymata4): The connection to the Arduino (via pymata4)
 
     Returns:
-    None
+    function has no return
     """
-    board.digital_write(tl1RedPin, pinOff)
-    board.digital_write(tl1YellowPin, pinOff)
-    board.digital_write(tl1GreenPin, pinOff)
-    board.digital_write(tl2RedPin, pinOff)
-    board.digital_write(tl2YellowPin, pinOff)
-    board.digital_write(tl2GreenPin, pinOff)
+    for pin in tl1Pins + tl2Pins + wl1Pins:
+        board.digital_write(pin, pinOff)
 
 
 def main():
     """
-    This is the main loop for approach height detection.
-    Sets up the board and pins, gets the overheight limit from the user, then
-    continuously checks US1/US2 for overheight vehicles and updates TL1/TL2
-    accordingly until the user exits with a KeyboardInterrupt.
+    Main loop for approach height detection. Sets up the board and pins, gets
+    the overheight limit from the user, then continues to use US1/US2 to detect
+    overheight vehicles and coordinates TL1/TL2/WL1 accordingly until exited 
+    with KeyboardInterrupt.
 
-    Args:
-    None
+    Parameters:
+    function has no parameters
 
     Returns:
-    None
+    function has no return
     """
     board = pymata4.Pymata4()
 
@@ -263,58 +236,48 @@ def main():
 
         overheightLimit = overheight_limit_setup()
 
-        # green light is on all the time before overheight vehicle is detected
-        board.digital_write(tl1GreenPin, pinOn)
-        board.digital_write(tl2GreenPin, pinOn)
+        # both traffic lights are green until an overheight vehicle is detected
+        tl1Colour, tl1Timer = "green", time.time()
+        tl2Colour, tl2Timer = "green", time.time()
+        set_light(board, tl1Pins, tl1Colour)
+        set_light(board, tl2Pins, tl2Colour)
 
-        tl1Light, tl1Timer = "green", time.time()
-        tl2Light, tl2Timer = "green", time.time()
-
-        # tracks whether each sensor currently sees an overheight vehicle
-        us1Detected = False
-        us2Detected = False
-
-        # recent height readings for each sensor, used for the moving average
-        us1Readings = []
-        us2Readings = []
+        # whether each sensor is already detecting the overheight vehicle 
+        us1WasOverheight = False
+        us2WasOverheight = False
 
         while True:
-            # heights are filtered with a moving average to reduce noise
-            us1Height = moving_average(us1Readings, vehicle_height_detection(board, us1TrigPin))
-            us2Height = moving_average(us2Readings, vehicle_height_detection(board, us2TrigPin))
+            us1Height = vehicle_height_detection(board, us1TrigPin)
+            us2Height = vehicle_height_detection(board, us2TrigPin)
 
-            # for us1 detection
-            if us1Height >= overheightLimit and not us1Detected:
-                print_overheight_alert(us1Height, "US1")
-                tl1Light, tl1Timer = green_to_yellow(board, tl1Light, tl1Timer, tl1RedPin, tl1YellowPin, tl1GreenPin)
-                us1Detected = True
-            elif us1Height < overheightLimit:
-                us1Detected = False
+            us1Overheight = us1Height > overheightLimit
+            us2Overheight = us2Height > overheightLimit
 
-            # for us2 detection
-            if us2Height >= overheightLimit and not us2Detected:
-                if not us1Detected:
-                    # if us1 did not detect, TL1 and TL2 both run their sequences
-                    tl1Light, tl1Timer = green_to_yellow(board, tl1Light, tl1Timer, tl1RedPin, tl1YellowPin, tl1GreenPin)
-                    tl2Light, tl2Timer = green_to_yellow(board, tl2Light, tl2Timer, tl2RedPin, tl2YellowPin, tl2GreenPin)
-                else:
-                    # if us1 already detected, only TL2 runs its sequence
-                    tl2Light, tl2Timer = green_to_yellow(board, tl2Light, tl2Timer, tl2RedPin, tl2YellowPin, tl2GreenPin)
-                us2Detected = True
-            elif us2Height < overheightLimit:
-                us2Detected = False
+            # a vehicle is only newly detected when it has not been detected already by the same sensor
+            us1NewDetection = us1Overheight and not us1WasOverheight
+            us2NewDetection = us2Overheight and not us2WasOverheight
 
-            # advance each light's own timer independently every loop
-            tl1Light, tl1Timer = yellow_to_red_to_green(board, tl1Light, tl1Timer, tl1RedPin, tl1YellowPin, tl1GreenPin)
-            tl2Light, tl2Timer = yellow_to_red_to_green(board, tl2Light, tl2Timer, tl2RedPin, tl2YellowPin, tl2GreenPin)
+            if us1NewDetection:
+                print_overheight_alert(us1Height)
+
+            # US1 triggers TL1. US2 triggers TL2 also TL1 if US1 is not detecting an overheight vehicle.
+            tl1Triggered = us1NewDetection or (us2NewDetection and not us1Overheight)
+            tl2Triggered = us2NewDetection
+
+            tl1Colour, tl1Timer = update_light(board, tl1Pins, tl1Colour, tl1Timer, tl1Triggered)
+            tl2Colour, tl2Timer = update_light(board, tl2Pins, tl2Colour, tl2Timer, tl2Triggered)
+
+            update_wl1(board, tl1Colour, tl2Colour)
+
+            # whether each sensor is currently detecting an overheight vehicle, 
+            # to be able to tell if vehicles are newly detected in the next check
+            us1WasOverheight = us1Overheight
+            us2WasOverheight = us2Overheight
 
             time.sleep(loopDelaySeconds)
 
     except KeyboardInterrupt:
-        print("Exiting approach height detection...")
-
-    finally:
-        # always leave the pins off and close the connection cleanly
+        print("Exiting approach height detection")
         turn_off_all_lights(board)
         board.shutdown()
 
