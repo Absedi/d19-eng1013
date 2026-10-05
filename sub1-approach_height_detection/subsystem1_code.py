@@ -22,6 +22,9 @@ tl2Pins = (11, 12, 13)
 # WL1 warning light pins (two yellow LEDs)
 wl1Pins = (4, 8)
 
+# PA1 buzzer pin (turns the 555 timer tone on/off)
+pa1Pin = 14
+
 # height of sensor above the ground (metres)
 sensorMountHeight = 5.0
 
@@ -49,7 +52,7 @@ pinOff = 0
 
 def pins_setup(board):
     """
-    Configures the pins for US1, US2, TL1, TL2 and WL1.
+    Configures the pins for US1, US2, TL1, TL2, WL1 and PA1.
 
     Parameters:
     board (Pymata4): The connection to the Arduino (via pymata4)
@@ -64,6 +67,9 @@ def pins_setup(board):
     # configuring every TL1, TL2 and WL1 LED as an output
     for pin in tl1Pins + tl2Pins + wl1Pins:
         board.set_pin_mode_digital_output(pin)
+
+    # configuring PA1
+    board.set_pin_mode_digital_output(pa1Pin)
 
 
 def overheight_limit_setup():
@@ -176,7 +182,7 @@ def update_light(board, lightPins, colour, timer, triggered):
 
 def update_wl1(board, tl1Colour, tl2Colour):
     """
-    Flashes two yellow WL1 LEDs at 2-3Hz while TL1 or TL2 is not
+    Flashes two yellow WL1 LEDs at 2.5Hz while TL1 or TL2 is not
     green. Both LEDs are off once TL1 and TL2 are both green.
 
     Parameters:
@@ -202,9 +208,28 @@ def update_wl1(board, tl1Colour, tl2Colour):
     board.digital_write(secondLedPin, pinOn if secondLedOn else pinOff)
 
 
+def update_pa1(board, tl1Colour, tl2Colour):
+    """
+    Turns on the PA1 buzzer tone while TL1 or TL2 is not green. PA1 is off
+    once TL1 and TL2 are both green.
+
+    Parameters:
+    board (Pymata4): The connection to the Arduino (via pymata4)
+    tl1Colour (str): The current colour of TL1
+    tl2Colour (str): The current colour of TL2
+
+    Returns:
+    function has no return
+    """
+    if tl1Colour == "green" and tl2Colour == "green":
+        board.digital_write(pa1Pin, pinOff)
+    else:
+        board.digital_write(pa1Pin, pinOn)
+
+
 def turn_off_all_lights(board):
     """
-    Turns off every LED used by TL1, TL2 and WL1.
+    Turns off every LED used by TL1, TL2 and WL1, and the PA1 buzzer.
 
     Parameters:
     board (Pymata4): The connection to the Arduino (via pymata4)
@@ -215,12 +240,14 @@ def turn_off_all_lights(board):
     for pin in tl1Pins + tl2Pins + wl1Pins:
         board.digital_write(pin, pinOff)
 
+    board.digital_write(pa1Pin, pinOff)
+
 
 def main():
     """
     Main loop for approach height detection. Sets up the board and pins, gets
     the overheight limit from the user, then continues to use US1/US2 to detect
-    overheight vehicles and coordinates TL1/TL2/WL1 accordingly until exited 
+    overheight vehicles and coordinates TL1/TL2/WL1/PA1 accordingly until exited 
     with KeyboardInterrupt.
 
     Parameters:
@@ -268,6 +295,7 @@ def main():
             tl2Colour, tl2Timer = update_light(board, tl2Pins, tl2Colour, tl2Timer, tl2Triggered)
 
             update_wl1(board, tl1Colour, tl2Colour)
+            update_pa1(board, tl1Colour, tl2Colour)
 
             # whether each sensor is currently detecting an overheight vehicle, 
             # to be able to tell if vehicles are newly detected in the next check
