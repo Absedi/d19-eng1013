@@ -1,7 +1,7 @@
 # This module contains the code for the over height exit
 # Created By : Millie Blank
 # Created Date: 26/8/2026
-# Version ='6.0'
+# Version ='7.0'
 
 from pymata4 import pymata4
 import time
@@ -37,7 +37,7 @@ maxVehicleHeight = 40 # cm
 heightUS5 = 50 # cm, physical vertical height of US5
 
 # Global variables
-overheightVeh = False
+overheightVehicle = False
 redLightOn = True
 yellowLightOn = False
 greenSolidOn = False
@@ -45,7 +45,7 @@ greenFlashOn = False
 greenStart = 0
 yellowStart = 0
 
-def US5_callback(data):
+def us5_callback(data):
     """
     Callback function that executes automatically when sonar data arrives.
     
@@ -55,13 +55,13 @@ def US5_callback(data):
     Returns:
     None
     """
-    global heightUS5, overheightVeh
+    global heightUS5, overheightVehicle
     distance = data[2]
     
     if heightUS5 - distance > maxVehicleHeight:
-        overheightVeh = True
+        overheightVehicle = True
     else:
-        overheightVeh = False
+        overheightVehicle = False
 
 
 def main():
@@ -72,23 +72,23 @@ def main():
     None
     
     Returns:
-    Nones
+    None
     '''
 
     global greenSolidOn, redLightOn, yellowLightOn, greenFlashOn, greenStart, yellowStart
-    global overheightVeh
+    global overheightVehicle
     
     board.digital_write(redTL6Pin, 1) # Set TL6 to red at the beginning
     board.digital_write(greenTL6Pin, 0)
     board.digital_write(greenFlashPin, 0)
 
     # Configure pin mode as sonar
-    board.set_pin_mode_sonar(triggerPin, echoPin, timeout=900000, callback=US5_callback)
+    board.set_pin_mode_sonar(triggerPin, echoPin, timeout=900000, callback=us5_callback)
     time.sleep(0.5) # small sleep to allow sonar to be configured correctly
     print("Trigger and echo pin initialisation complete.\nStarting program.")
 
     while True:
-        if overheightVeh == True and greenSolidOn == False: # US5 first detects an overheight vehicle
+        if overheightVehicle == True and greenSolidOn == False: # US5 first detects an overheight vehicle
             board.digital_write(redTL6Pin, 0) # red light off
             redLightOn = False
             board.digital_write(yellowTL6Pin, 0) # yellow light off
@@ -97,7 +97,7 @@ def main():
             greenStart = time.time() # records the time that the green light turns on
             greenSolidOn = True
 
-        elif overheightVeh == False and greenSolidOn == True: # if vehicle leaves during solid green, go to yellow
+        elif overheightVehicle == False and greenSolidOn == True: # if vehicle leaves during solid green, go to yellow
             if (time.time() - greenStart >= greenWait):
                 board.digital_write(greenTL6Pin, 0) # green light off
                 greenSolidOn = False
@@ -106,21 +106,21 @@ def main():
                 yellowStart = time.time()
                 yellowLightOn = True
 
-        elif overheightVeh == False and yellowLightOn == True: # if TL6 is yellow, wait 3s then turn red
+        elif overheightVehicle == False and yellowLightOn == True: # if TL6 is yellow, wait 3s then turn red
             if (time.time() - yellowStart >= yellowWait):
                 board.digital_write(yellowTL6Pin, 0) # yellow light off
                 yellowLightOn = False
                 board.digital_write(redTL6Pin, 1) # red light on
                 redLightOn = True
 
-        if overheightVeh == True and greenFlashOn == False: # if green light has been on for 5s seconds, flash green light
+        if overheightVehicle == True and greenFlashOn == False: # if green light has been on for 5s seconds, flash green light
             if (time.time() - greenStart >= greenWait): # check if green light has been on for 5 secs on more 
                 board.digital_write(greenTL6Pin, 0) # solid green light off
                 greenSolidOn = False
                 board.digital_write(greenFlashPin, 1) # green flash on
                 greenFlashOn = True
 
-        if overheightVeh == False and greenFlashOn == True: # if vehicle leaves during flash, go straight to red
+        if overheightVehicle == False and greenFlashOn == True: # if vehicle leaves during flash, go straight to red
             board.digital_write(greenFlashPin, 0)
             greenFlashOn = False
             board.digital_write(greenTL6Pin, 0) # solid green light off
