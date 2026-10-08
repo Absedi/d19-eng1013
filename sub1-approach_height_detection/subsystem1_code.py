@@ -12,28 +12,33 @@ from pymata4 import pymata4
 # pin configurations:
 us1TrigPin = 2
 us1EchoPin = 3
-us2TrigPin = 9
-us2EchoPin = 10
+us2TrigPin = 8
+us2EchoPin = 9
 
 # US5 (from subsystem 3) uses A1 and A2 as digital pins
 us5TrigPin = 15
 us5EchoPin = 16
 
-# traffic light pins (red, yellow, green)
-tl1Pins = (5, 6, 7)
-tl2Pins = (11, 12, 13)
+# shift register control pins
+dataPin = 5
+clockPin = 6
+latchPin = 7
 
-# WL1 warning light pins (two yellow LEDs)
-wl1Pins = (4, 8)
+# traffic light outputs (red, yellow, green)
+tl1Pins = (1, 2, 3)
+tl2Pins = (4, 5, 6)
 
-# WL1 LED flashing rate (at 2-3 Hz)
-wl1FlashFrequency = 2.5
-# the two LEDs take turns, so each one is on for half of a flash
-wl1Leds = 2
-wl1FlashSequence = 1 / (wl1Leds * wl1FlashFrequency)
+# WL1 warning light outputs (two yellow LEDs)
+wl1Pins = (0, 7)
 
-# PA1 buzzer pin (turns the 555 timer tone on/off), and uses A0 as a digital pin
-pa1Pin = 14
+# PA1 buzzer pin (turns the 555 timer tone on/off)
+pa1Pin = 4
+
+# number of outputs on the shift register
+numberOfShiftOutputs = 8
+
+# on or off state (1 or 0) of each shift register output
+shiftLedStates = [0] * numberOfShiftOutputs
 
 # height of sensor above the ground (metres)
 sensorMountHeight = 5.0
@@ -51,14 +56,24 @@ redDurationSeconds = 30
 # delay between looping (seconds)
 loopDelaySeconds = 0.05
 
+# WL1 LED flashing rate (at 2-3 Hz)
+wl1FlashFrequencyHz = 2
+wl1FlashHalfPeriodSeconds = 1 / (2 * wl1FlashFrequencyHz)
+
 # digital pin states
 pinOn = 1
 pinOff = 0
 
+# delay for off commands to reach the Arduino before shutdown
+shutdownDelaySeconds = 0.2
+
+# delay for the shift register
+shiftRegisterDelay = 0.001
+
 
 def pins_setup(board):
     """
-    Configures the pins for US1, US2, US5, TL1, TL2, WL1 and PA1.
+    Configures the pins for US1, US2, US5, the shift register (TL1, TL2, WL1) and PA1.
 
     Parameters:
     board (Pymata4): The connection to the Arduino (via pymata4)
@@ -73,19 +88,62 @@ def pins_setup(board):
     # configuring US5
     board.set_pin_mode_sonar(us5TrigPin, us5EchoPin)
 
-    # configuring every TL1, TL2 and WL1 LED as an output
-    for pin in tl1Pins + tl2Pins + wl1Pins:
-        board.set_pin_mode_digital_output(pin)
+    # configuring shift register control pins
+    board.set_pin_mode_digital_output(dataPin)
+    board.set_pin_mode_digital_output(clockPin)
+    board.set_pin_mode_digital_output(latchPin)
 
     # configuring PA1
     board.set_pin_mode_digital_output(pa1Pin)
 
 
+def write_shift_led(outputNumber, state):
+    """
+    Sets the state of one shift register output. The LED only changes
+    once update_shift_register is called.
+
+    Parameters:
+    outputNumber (int): The shift register output (0-7) the LED is connected to
+    state (int): pinOn or pinOff
+
+    Returns:
+    function has no return
+    """
+    shiftLedStates[outputNumber] = state
+
+
+def update_shift_register(board):
+    """
+    Sends the stored LED states to the shift register, with a short
+    pause after each write.
+
+    Parameters:
+    board (Pymata4): The connection to the Arduino (via pymata4)
+
+    Returns:
+    function has no return
+    """
+    board.digital_write(latchPin, pinOff)
+    time.sleep(shiftRegisterDelay)
+
+    # sending 8 LED states one at a time
+    # starting with output 7 first and output 0 last, so each LED ends up on the right output
+    for outputNumber in reversed(range(numberOfShiftOutputs)):
+        board.digital_write(dataPin, shiftLedStates[outputNumber])
+        time.sleep(shiftRegisterDelay)
+        board.digital_write(clockPin, pinOn)
+        time.sleep(shiftRegisterDelay)
+        board.digital_write(clockPin, pinOff)
+        time.sleep(shiftRegisterDelay)
+
+    board.digital_write(latchPin, pinOn)
+
+
 def overheight_limit_setup():
     """
     Asks the user to enter the overheight limit in metres. If the user presses
-    enter, the default limit of 4m is used. If the input
-    is not positive and is 0, the user is asked again.
+    enter, the default limit of 4m is used. If the input is zero, negative or
+    not a number, the user is asked again.
 
     Parameters:
     function has no parameters
@@ -143,19 +201,20 @@ def print_overheight_alert(vehicleHeight):
 def set_light(board, lightPins, colour):
     """
     Turns on the LED of given colour and turns off LEDs of other two colours.
+    The change is sent to the LEDs by update_shift_register.
 
     Parameters:
     board (Pymata4): The connection to the Arduino (via pymata4)
-    lightPins (tuple): The (red, yellow, green) pin numbers of TL1 or TL2
+    lightPins (tuple): The (red, yellow, green) shift register outputs of TL1 or TL2
     colour (str): The colour to show: "red", "yellow" or "green"
 
     Returns:
     function has no return
     """
     redPin, yellowPin, greenPin = lightPins
-    board.digital_write(redPin, pinOn if colour == "red" else pinOff)
-    board.digital_write(yellowPin, pinOn if colour == "yellow" else pinOff)
-    board.digital_write(greenPin, pinOn if colour == "green" else pinOff)
+    write_shift_led(redPin, pinOn if colour == "red" else pinOff)
+    write_shift_led(yellowPin, pinOn if colour == "yellow" else pinOff)
+    write_shift_led(greenPin, pinOn if colour == "green" else pinOff)
 
 
 def update_light(board, lightPins, colour, timer, triggered, keepRed):
@@ -166,7 +225,7 @@ def update_light(board, lightPins, colour, timer, triggered, keepRed):
 
     Parameters:
     board (Pymata4): The connection to the Arduino (via pymata4)
-    lightPins (tuple): The (red, yellow, green) pin numbers of TL1 or TL2
+    lightPins (tuple): The (red, yellow, green) shift register outputs of TL1 or TL2
     colour (str): The light's current colour
     timer (float): The time (from time.time()) of the light's last colour change
     triggered (bool): True if an overheight vehicle was just detected for this light
@@ -193,8 +252,9 @@ def update_light(board, lightPins, colour, timer, triggered, keepRed):
 
 def update_wl1(board, tl1Colour, tl2Colour):
     """
-    Flashes two yellow WL1 LEDs at 2.5Hz while TL1 or TL2 is not
+    Flashes two yellow WL1 LEDs at wl1FlashFrequencyHz while TL1 or TL2 is not
     green. Both LEDs are off once TL1 and TL2 are both green.
+    The change is sent to the LEDs by update_shift_register.
 
     Parameters:
     board (Pymata4): The connection to the Arduino (via pymata4)
@@ -211,12 +271,13 @@ def update_wl1(board, tl1Colour, tl2Colour):
         secondLedOn = False
     else:
         # first LED lights on for halfway through one flash
-        firstLedOn = int(time.time() / wl1FlashSequence) % wl1Leds == 0
+        firstLedOn = int(time.time() / wl1FlashHalfPeriodSeconds) % 2 == 0
         # second LED lights on for the other half of one flash
         secondLedOn = not firstLedOn
 
-    board.digital_write(firstLedPin, pinOn if firstLedOn else pinOff)
-    board.digital_write(secondLedPin, pinOn if secondLedOn else pinOff)
+    # saving whether each WL1 LED should be on or off (1 or 0)
+    write_shift_led(firstLedPin, pinOn if firstLedOn else pinOff)
+    write_shift_led(secondLedPin, pinOn if secondLedOn else pinOff)
 
 
 def update_pa1(board, tl1Colour, tl2Colour):
@@ -240,7 +301,7 @@ def update_pa1(board, tl1Colour, tl2Colour):
 
 def turn_off_all_lights(board):
     """
-    Turns off every LED used by TL1, TL2 and WL1, and the PA1 buzzer.
+    Turns off every LED used by TL1, TL2 and WL1, then the PA1 buzzer.
 
     Parameters:
     board (Pymata4): The connection to the Arduino (via pymata4)
@@ -248,10 +309,24 @@ def turn_off_all_lights(board):
     Returns:
     function has no return
     """
-    for pin in tl1Pins + tl2Pins + wl1Pins:
-        board.digital_write(pin, pinOff)
+    # turning off every LED by writing eight 0's to the shift register
+    board.digital_write(latchPin, pinOff)
+    board.digital_write(dataPin, pinOff)
+    for _ in range(numberOfShiftOutputs):
+        board.digital_write(clockPin, pinOn)
+        board.digital_write(clockPin, pinOff)
+    board.digital_write(latchPin, pinOn)
 
+    # every shift register control pin low
+    board.digital_write(latchPin, pinOff)
+    board.digital_write(clockPin, pinOff)
+    board.digital_write(dataPin, pinOff)
+
+    # buzzer off
     board.digital_write(pa1Pin, pinOff)
+
+    # giving above commands time to reach Arduino before shutdown
+    time.sleep(shutdownDelaySeconds)
 
 
 def main():
@@ -280,6 +355,7 @@ def main():
         tl2Colour, tl2Timer = "green", time.time()
         set_light(board, tl1Pins, tl1Colour)
         set_light(board, tl2Pins, tl2Colour)
+        update_shift_register(board)
 
         # whether each sensor is already detecting the overheight vehicle
         us1WasOverheight = False
@@ -318,13 +394,12 @@ def main():
             tl1Colour, tl1Timer = update_light(board, tl1Pins, tl1Colour, tl1Timer, tl1Triggered, keepRed)
             tl2Colour, tl2Timer = update_light(board, tl2Pins, tl2Colour, tl2Timer, tl2Triggered, keepRed)
 
-            # saves that US5 has detected a vehicle exiting.
-            if keepRed and us5Overheight and not us5HasSeenVehicle:
+            # saving that US5 has detected a vehicle exiting
+            if keepRed and us5Overheight:
                 us5HasSeenVehicle = True
 
-            # Once:
-            # US5 has detected the vehicle exiting
-            # and US1, US2 & US5 are all clear
+            # once US5 has detected the vehicle exiting and US1, US2 and US5 are all clear,
+            # TL1 and TL2 go back to green
             allClear = not (us1Overheight or us2Overheight or us5Overheight)
             if keepRed and us5HasSeenVehicle and allClear:
                 tl1Colour, tl1Timer = "green", time.time()
@@ -334,7 +409,9 @@ def main():
                 keepRed = False
                 us5HasSeenVehicle = False
 
+            # updating WL1, all LEDs, then PA1
             update_wl1(board, tl1Colour, tl2Colour)
+            update_shift_register(board)
             update_pa1(board, tl1Colour, tl2Colour)
 
             # whether each sensor is currently detecting an overheight vehicle,
